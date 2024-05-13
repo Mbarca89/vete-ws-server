@@ -1,19 +1,24 @@
+const { Client } = require('whatsapp-web.js');
 const express = require('express');
-const cookieParser = require('cookie-parser');
-const bodyParser = require('body-parser');
+const http = require('http');
+const socketIO = require('socket.io');
 const morgan = require('morgan');
-const routes = require('./routes/index.js');
+const path = require('path');
+const PORT = 3001
 
-const server = express();
 
-server.name = 'API';
+const app = express();
+const server = http.createServer(app);
+const io = socketIO(server);
 
-server.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
-server.use(bodyParser.json({ limit: '50mb' }));
-server.use(cookieParser());
-server.use(morgan('dev'));
-server.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*'); // update to match the domain you will make the request from
+app.use(express.static('public'));
+
+app.use('/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist')));
+
+app.use(morgan('dev'));
+
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, X-Auth-Token');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
@@ -23,13 +28,51 @@ server.use((req, res, next) => {
   next();
 });
 
-server.use('/', routes);
 
-server.use((err, req, res, next) => {
-  const status = err.status || 500;
-  const message = err.message || err;
-  console.error(err);
-  res.status(status).send(message);
+const client = new Client();
+
+let generatedQR = null;
+
+
+client.on('qr', (qr) => {
+    console.log('QR RECEIVED', qr);
+    generatedQR = qr;
+    io.emit('qr', qr);
+    io.emit('message', 'QR Code received, scan please!');
 });
 
-module.exports = server;
+client.on('ready', () => {
+    console.log('Client is ready!');
+    io.emit('message', 'WhatsApp client is ready!');
+});
+
+client.on('authenticated', () => {
+    console.log('Authenticated');
+    io.emit('message', 'WhatsApp client is authenticated!');
+});
+
+client.on('disconnected', (reason) => {
+    console.log('client disconnected:', reason);
+
+});
+
+client.initialize();
+
+
+io.on('connection', (socket) => {
+    console.log('Client connected');
+
+    if (generatedQR) {
+        socket.emit('qr', generatedQR);
+    }
+    socket.on('disconnect', () => {
+        console.log('Client disconnected');
+    });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+
+module.exports = app;

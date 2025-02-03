@@ -64,7 +64,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" })); 
 
 const corsOptions = {
-  origin: '*', // Cambia esto si usas otro puerto en React
+  origin: 'https://admin.veterinariadelparque.com.ar', // Cambia esto si usas otro puerto en React
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'X-Auth-Token', "Authorization"],
   credentials: true // Si usas cookies o autenticación con sesiones
@@ -75,7 +75,7 @@ app.use(cors(corsOptions)); // Configura CORS primero
 app.options('*', cors(corsOptions));
 
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Origin", "https://admin.veterinariadelparque.com.ar");
   res.header("Access-Control-Allow-Credentials", "true");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, X-Auth-Token, Authorization");

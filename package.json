@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "nodemon index.js",
     "test": "mocha -w ./tests/**/*.spec.js"
   },
   "author": "Henry",
@@ -30,6 +30,6 @@
   },
   "devDependencies": {
     "chai": "^4.2.0",
-    "nodemon": "^2.0.6"
+    "nodemon": "^2.0.22"
   }
 }

@@ -5,8 +5,10 @@ const client = require("./src/client/client")
 const QRCode = require('qrcode');
 const routes = require("./src/routes/index");
 const cors = require("cors")
+const morgan = require('morgan');
 
 const app = express();
+app.use(morgan('dev'));
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
@@ -58,11 +60,33 @@ io.on('connection', async (socket) => {
     });
 });
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: "50mb" })); 
+app.use(express.urlencoded({ extended: true, limit: "50mb" })); 
+
+const corsOptions = {
+  origin: 'http://localhost:5173', // Cambia esto si usas otro puerto en React
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'X-Auth-Token', "Authorization"],
+  credentials: true // Si usas cookies o autenticación con sesiones
+};
+
+app.use(cors(corsOptions)); // Configura CORS primero
+
+app.options('*', cors(corsOptions));
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "http://localhost:5173");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, X-Auth-Token, Authorization");
+  
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 app.use('/', routes);
-app.use(cors())
 
 server.listen(3001, () => {
     console.log('Server is running on port 3001');

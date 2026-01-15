@@ -8,7 +8,7 @@ const sendWaMessage = async (req, res) => {
         if (!number) throw Error("Ingrese el numero del destinatario")
         if (!number.match(numberRegex)) throw Error("El número es incorrecto")
         if (!message) throw Error("Ingrese el mensaje")
-        const response = await client.sendMessage(`${number}@c.us`, message)
+        const response = await client.sendMessage(`${number}@c.us`, message, { sendSeen: false });
         return res.status(200).json({ message: "mensaje enviado" })
     } catch (error) {
         return res.status(400).json({ message: `Faltan datos: ${error.message}` })

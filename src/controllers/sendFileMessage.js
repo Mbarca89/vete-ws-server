@@ -18,7 +18,11 @@ const sendFileMessage = async (req, res) => {
     await client.sendMessage(
       `${number}@c.us`,
       media,
-      { caption: "receta", sendMediaAsDocument: mimeType === "application/pdf" }
+      {
+        caption: "receta",
+        sendMediaAsDocument: mimeType === "application/pdf",
+        sendSeen: false,
+      }
     );
 
     return res.status(200).json({ message: "mensaje enviado" });

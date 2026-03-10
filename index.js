@@ -48,7 +48,7 @@ io.on('connection', async (socket) => {
     console.log('Client connected');
     if(clientInitialized) {
       const clientStatus = await client.getState()
-      console.log(clientStatus)
+      console.log("Client status: ",clientStatus)
       if(clientStatus == "CONNECTED") io.emit('ready', 'WhatsApp web esta conectado!');
     }
     io.emit('serverReady', 'Server Started')

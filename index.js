@@ -20,6 +20,14 @@ const io = socketIo(server, {
 let generatedQR = null;
 let clientInitialized = false;
 
+const isClientConnected = async () => {
+  if (!clientInitialized && !client.isReady()) return false;
+
+  const clientStatus = await client.getState();
+  console.log("Client status: ", clientStatus);
+  return clientStatus === "CONNECTED" || client.isReady();
+};
+
 client.on('qr', async (qr) => {
     console.log('QR RECEIVED', qr);
     try {
@@ -37,8 +45,24 @@ client.on('ready', async () => {
     io.emit('ready', 'WhatsApp web esta conectado!');
 });
 
+client.on('authenticated', () => {
+    console.log('Client authenticated');
+});
+
+client.on('auth_failure', (message) => {
+    console.log('client auth failure:', message);
+    clientInitialized = false;
+    generatedQR = null;
+    io.emit('logedOut', 'WhatsApp web necesita autenticarse de nuevo!');
+});
+
+client.on('change_state', (state) => {
+    console.log('Client state changed:', state);
+});
+
 client.on('disconnected', (reason) => {
     console.log('client disconnected:', reason);
+    clientInitialized = false;
     io.emit('logedOut', 'WhatsApp web esta desconectado!');
 });
 
@@ -46,10 +70,8 @@ client.initialize();
 
 io.on('connection', async (socket) => {
     console.log('Client connected');
-    if(clientInitialized) {
-      const clientStatus = await client.getState()
-      console.log("Client status: ",clientStatus)
-      if(clientStatus == "CONNECTED") io.emit('ready', 'WhatsApp web esta conectado!');
+    if(await isClientConnected()) {
+      io.emit('ready', 'WhatsApp web esta conectado!');
     }
     io.emit('serverReady', 'Server Started')
     if (generatedQR) {
@@ -89,3 +111,24 @@ app.use('/', routes);
 server.listen(3001, () => {
     console.log('Server is running on port 3001');
 });
+
+const shutdown = async (signal) => {
+    console.log(`${signal} received. Closing server and WhatsApp client...`);
+
+    const forceExitTimer = setTimeout(() => process.exit(1), 10000);
+    forceExitTimer.unref();
+
+    try {
+        io.close();
+        server.close();
+        await client.destroy();
+        clearTimeout(forceExitTimer);
+        process.exit(0);
+    } catch (error) {
+        console.error('Error during shutdown:', error);
+        process.exit(1);
+    }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

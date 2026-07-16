@@ -34,7 +34,12 @@ const sendFileMessage = async (req, res) => {
       return res.status(200).json({ message: "mensaje enviado (con warning interno)" });
     }
     console.error("sendFileMessage error:", error);
-    return res.status(400).send(`Error al enviar el mensaje: ${error.message}`);
+    const statusCode = error.statusCode || 400;
+    const message = statusCode === 503
+      ? "WhatsApp web no esta conectado. Intente nuevamente en unos segundos."
+      : `Error al enviar el mensaje: ${error.message}`;
+
+    return res.status(statusCode).send(message);
   }
 };
 

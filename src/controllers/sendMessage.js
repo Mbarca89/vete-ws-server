@@ -11,7 +11,12 @@ const sendWaMessage = async (req, res) => {
         const response = await client.sendMessage(`${number}@c.us`, message, { sendSeen: false });
         return res.status(200).json({ message: "mensaje enviado" })
     } catch (error) {
-        return res.status(400).json({ message: `Faltan datos: ${error.message}` })
+        const statusCode = error.statusCode || 400;
+        const message = statusCode === 503
+            ? "WhatsApp web no esta conectado. Intente nuevamente en unos segundos."
+            : `Faltan datos: ${error.message}`;
+
+        return res.status(statusCode).json({ message })
     }
 }
 

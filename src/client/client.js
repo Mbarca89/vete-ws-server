@@ -8,8 +8,26 @@ let initializing = false;
 let ready = false;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
+let lastStateWarningAt = 0;
 
 const maxReconnectDelayMs = 60 * 1000;
+const stateWarningIntervalMs = 30 * 1000;
+
+const isTransientPuppeteerError = (error) => {
+  const message = String(error?.message || error);
+
+  return (
+    message.includes("detached Frame") ||
+    message.includes("Execution context was destroyed") ||
+    message.includes("Protocol error")
+  );
+};
+
+const createNotReadyError = () => {
+  const error = new Error("WhatsApp client is not ready");
+  error.statusCode = 503;
+  return error;
+};
 
 const createClient = () => {
   const nextClient = new Client({
@@ -110,19 +128,34 @@ const getState = async () => {
   try {
     return await client.getState();
   } catch (error) {
-    console.warn("Could not read WhatsApp client state:", error.message);
+    const now = Date.now();
+
+    if (now - lastStateWarningAt > stateWarningIntervalMs) {
+      console.warn("Could not read WhatsApp client state:", error.message);
+      lastStateWarningAt = now;
+    }
+
     return null;
   }
 };
 
 const sendMessage = async (...args) => {
   if (!client || !ready) {
-    const error = new Error("WhatsApp client is not ready");
-    error.statusCode = 503;
-    throw error;
+    throw createNotReadyError();
   }
 
-  return client.sendMessage(...args);
+  try {
+    return await client.sendMessage(...args);
+  } catch (error) {
+    if (isTransientPuppeteerError(error)) {
+      ready = false;
+      console.warn("WhatsApp client transient browser error:", error.message);
+      scheduleReconnect("transient_browser_error");
+      throw createNotReadyError();
+    }
+
+    throw error;
+  }
 };
 
 const destroy = async () => {

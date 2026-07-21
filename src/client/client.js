@@ -8,10 +8,14 @@ let initializing = false;
 let ready = false;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
+let readyWatchdogTimer = null;
 let lastStateWarningAt = 0;
+let sendQueue = Promise.resolve();
 
 const maxReconnectDelayMs = 60 * 1000;
 const stateWarningIntervalMs = 30 * 1000;
+const sendReadyTimeoutMs = 30 * 1000;
+const readyWatchdogTimeoutMs = Number(process.env.WWEBJS_READY_TIMEOUT_MS || 120000);
 
 const isTransientPuppeteerError = (error) => {
   const message = String(error?.message || error);
@@ -27,6 +31,71 @@ const createNotReadyError = () => {
   const error = new Error("WhatsApp client is not ready");
   error.statusCode = 503;
   return error;
+};
+
+const waitForReady = (timeoutMs = sendReadyTimeoutMs) => {
+  if (ready) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timeout);
+      events.off("ready", handleReady);
+      events.off("qr", handleUnavailable);
+      events.off("auth_failure", handleUnavailable);
+      events.off("disconnected", handleUnavailable);
+    };
+
+    const handleReady = () => {
+      cleanup();
+      resolve();
+    };
+
+    const handleUnavailable = () => {
+      cleanup();
+      reject(createNotReadyError());
+    };
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(createNotReadyError());
+    }, timeoutMs);
+
+    events.once("ready", handleReady);
+    events.once("qr", handleUnavailable);
+    events.once("auth_failure", handleUnavailable);
+    events.once("disconnected", handleUnavailable);
+  });
+};
+
+const ensureReady = async () => {
+  if (!client) await initialize();
+  await waitForReady();
+};
+
+const enqueueSend = (task) => {
+  const queuedTask = sendQueue.then(task, task);
+  sendQueue = queuedTask.catch(() => {});
+  return queuedTask;
+};
+
+const clearReadyWatchdog = () => {
+  if (readyWatchdogTimer) {
+    clearTimeout(readyWatchdogTimer);
+    readyWatchdogTimer = null;
+  }
+};
+
+const startReadyWatchdog = (reason) => {
+  if (ready || readyWatchdogTimer) return;
+
+  readyWatchdogTimer = setTimeout(() => {
+    readyWatchdogTimer = null;
+
+    if (ready) return;
+
+    console.warn(`WhatsApp client did not become ready after ${readyWatchdogTimeoutMs}ms. Reason: ${reason}`);
+    scheduleReconnect("ready_timeout");
+  }, readyWatchdogTimeoutMs);
 };
 
 const createClient = () => {
@@ -48,31 +117,40 @@ const createClient = () => {
 
   nextClient.on("qr", (qr) => {
     ready = false;
+    clearReadyWatchdog();
     events.emit("qr", qr);
   });
 
   nextClient.on("authenticated", () => {
+    startReadyWatchdog("authenticated");
     events.emit("authenticated");
   });
 
   nextClient.on("auth_failure", (message) => {
     ready = false;
+    clearReadyWatchdog();
     events.emit("auth_failure", message);
     scheduleReconnect("auth_failure");
   });
 
   nextClient.on("ready", () => {
     ready = true;
+    clearReadyWatchdog();
     reconnectAttempts = 0;
     events.emit("ready");
   });
 
   nextClient.on("change_state", (state) => {
+    if (!ready && (state === "OPENING" || state === "PAIRING" || state === "CONNECTED")) {
+      startReadyWatchdog(`state_${state}`);
+    }
+
     events.emit("change_state", state);
   });
 
   nextClient.on("disconnected", (reason) => {
     ready = false;
+    clearReadyWatchdog();
     events.emit("disconnected", reason);
     scheduleReconnect(reason || "disconnected");
   });
@@ -139,10 +217,8 @@ const getState = async () => {
   }
 };
 
-const sendMessage = async (...args) => {
-  if (!client || !ready) {
-    throw createNotReadyError();
-  }
+const sendMessageNow = async (...args) => {
+  await ensureReady();
 
   try {
     return await client.sendMessage(...args);
@@ -151,12 +227,15 @@ const sendMessage = async (...args) => {
       ready = false;
       console.warn("WhatsApp client transient browser error:", error.message);
       scheduleReconnect("transient_browser_error");
-      throw createNotReadyError();
+      await waitForReady(45 * 1000);
+      return client.sendMessage(...args);
     }
 
     throw error;
   }
 };
+
+const sendMessage = async (...args) => enqueueSend(() => sendMessageNow(...args));
 
 const destroy = async () => {
   ready = false;
@@ -165,6 +244,7 @@ const destroy = async () => {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  clearReadyWatchdog();
 
   const staleClient = client;
   client = null;
